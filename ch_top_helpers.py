@@ -437,23 +437,33 @@ SMOKE_IMPORT = "import ksgpu, pirate_frb; print('import ok')"
 HEAVY_TEST = ["-m", "pirate_frb", "test", "-n", "1"]
 
 
-def build_venv(workdir, *, recreate: bool = False, test: bool = False) -> None:
+def build_venv(workdir, *, recreate: bool = False, test: bool = False,
+               release: bool = False) -> None:
     """Create (or refresh) <workdir>/.venv: a --system-site-packages overlay on
     the active conda env, with each repo in BUILD compiled + installed editable.
+
+    With release=True, create the BARE venv only -- no editable installs, no
+    compilation, no smoke test. For a workspace used to test the sdist build /
+    PyPI upload, where the packages are deliberately NOT pre-installed (and the
+    editables shim is unneeded: it exists only for the editable .pth files).
 
     Called in-process by init-toplevel / init-worktree, and standalone via the
     init-venv CLI. See README.md.
     """
+    if release and test:
+        die("release=True cannot run the unit test (nothing is installed)")
     workdir = Path(workdir).resolve()
     if not workdir.is_dir():
         die(f"workdir does not exist: {workdir}")
 
     # Reminder enforcement: warn about manifest repos this does not build.
-    built = set(BUILD)
-    for name in load_manifest():
-        if name not in built:
-            warn(f"repo '{name}' is in the manifest but build_venv does not build "
-                 f"it -- add it to BUILD in {Path(__file__).name}")
+    # (Moot in release mode, which builds nothing.)
+    if not release:
+        built = set(BUILD)
+        for name in load_manifest():
+            if name not in built:
+                warn(f"repo '{name}' is in the manifest but build_venv does not build "
+                     f"it -- add it to BUILD in {Path(__file__).name}")
 
     venv = workdir / ".venv"
     if venv.exists() and recreate:
@@ -464,6 +474,10 @@ def build_venv(workdir, *, recreate: bool = False, test: bool = False) -> None:
         run([base_python(), "-m", "venv", "--system-site-packages", str(venv)])
     else:
         info(f"reusing existing venv {venv} (use --recreate to rebuild)")
+
+    if release:
+        info(f"venv ready (release mode -- bare venv, nothing installed): {venv}")
+        return
 
     env = venv_env(workdir)
     pip = str(venv / "bin" / "pip")

@@ -174,12 +174,16 @@ seccomp tweak, no `nvidia-container-toolkit`; see Appendix C.
   the reminder in the manifest).
 - `init-toplevel` -- one-time: clone/checkout each repo, init submodules,
   build the `top` `.venv`. Idempotent.
-- `init-worktree NAME [--no-venv]` -- create `../NAME`: a worktree of top +
-  each repo (new branch NAME off each integration branch), render the dotfiles +
-  the sandbox launcher, ensure the base image is present, build the `.venv`.
-- `init-venv [WORKDIR] [--recreate] [--test]` -- (re)build a workspace's `.venv`
-  overlay. A thin CLI wrapper around `ch_top_helpers.build_venv()`, which
-  `init-toplevel`/`init-worktree` call directly; also runnable standalone.
+- `init-worktree NAME [--no-venv | -r/--release]` -- create `../NAME`: a worktree
+  of top + each repo (new branch NAME off each integration branch), render the
+  dotfiles + the sandbox launcher, ensure the base image is present, build the
+  `.venv`. With `-r/--release` the `.venv` is created bare (no editable installs,
+  no compilation) -- a workspace for testing the sdist build / PyPI upload, where
+  the packages must not be pre-installed.
+- `init-venv [WORKDIR] [--recreate] [--test] [-r/--release]` -- (re)build a
+  workspace's `.venv` overlay (`--release`: bare, as above). A thin CLI wrapper
+  around `ch_top_helpers.build_venv()`, which `init-toplevel`/`init-worktree`
+  call directly; also runnable standalone.
 - `delete-worktree NAME [--force]` -- tear a feature workspace down (keeps the
   feature branches; `--force` overrides the dirty-tree check).
 - `git-status` / `git-diff [ARGS...]` -- run `git status` / `git diff`

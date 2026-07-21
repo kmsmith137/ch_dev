@@ -28,8 +28,12 @@ def main() -> None:
                     help="delete and rebuild .venv from scratch")
     ap.add_argument("--test", action="store_true",
                     help="also run the slow GPU unit test (pirate_frb test -n 1)")
+    ap.add_argument("-r", "--release", action="store_true",
+                    help="create the venv BARE (no editable installs, no build) -- "
+                         "for a release/sdist-testing workspace; excludes --test")
     args = ap.parse_args()
-    wl.build_venv(args.workdir, recreate=args.recreate, test=args.test)
+    wl.build_venv(args.workdir, recreate=args.recreate, test=args.test,
+                  release=args.release)
 
 
 if __name__ == "__main__":
