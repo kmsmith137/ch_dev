@@ -73,9 +73,16 @@ if [ "${SBOX_NO_PROXY:-0}" != 1 ]; then
   "$TOPLEVEL/sbox-net" start \
     || die "egress proxy failed to start (try '$TOPLEVEL/sbox-net status', or SBOX_NO_PROXY=1 to bypass)"
   purl="$("$TOPLEVEL/sbox-net" url)"
+  # NO_PROXY: exempt NODE-LOCAL traffic from the proxy -- localhost plus the
+  # host's own IP addresses (pasta mirrors the default interface's address into
+  # the sandbox netns, so in-sandbox services can bind it -- e.g. pirate's rpc
+  # servers at 10.222.3.5:6000, which grpc would otherwise route into the
+  # proxy and get a 403). The proxy governs EXTERNAL egress only.
+  self_ips="$(hostname -I 2>/dev/null | tr ' ' ',' | sed 's/,\{2,\}/,/g; s/,$//')"
+  noproxy="localhost,127.0.0.1,::1${self_ips:+,$self_ips}"
   PROXY_ENV=( -e HTTPS_PROXY="$purl" -e HTTP_PROXY="$purl"
               -e https_proxy="$purl" -e http_proxy="$purl"
-              -e NO_PROXY="localhost,127.0.0.1,::1" -e no_proxy="localhost,127.0.0.1,::1" )
+              -e NO_PROXY="$noproxy" -e no_proxy="$noproxy" )
 fi
 
 # clean_lines FILE -> the file's meaningful lines: strip "#" comments and the
