@@ -122,6 +122,10 @@ read_list() {
 # gateway, bridged back to the container's 127.0.0.1 by the forwarder below.
 # SBOX_NETNS=0 restores the old shared host netns (shared loopback, and the
 # host's real networks -- e.g. the 10.0.x data nets -- visible in the sandbox).
+# Note: production-scale pirate runs inside the default private netns use a
+# config whose data addresses are rewritten to loopback (in-netns loopback
+# traffic is kernel-delivered, never forwarded by pasta) -- see
+# pirate's production-search test instructions.
 SBOX_NETNS="${SBOX_NETNS:-1}"
 if [ "$SBOX_NETNS" = 1 ]; then
   NETOPT=( --network pasta:--map-gw )
@@ -143,7 +147,8 @@ fi
 # Caches go to the tmpfs /tmp (home dirs are read-only or absent under the allowlist).
 a=( run --rm "${NETOPT[@]}" --ipc host --ulimit memlock=-1:-1 --group-add keep-groups
     --tmpfs /tmp --tmpfs /run -w "$WT"
-    -e HOME="$HOME" -e IS_SANDBOX=1 -e CLAUDE_CONFIG_DIR="$CH/claude"
+    -e HOME="$HOME" -e USER="${USER:-$(id -un)}"
+    -e IS_SANDBOX=1 -e CLAUDE_CONFIG_DIR="$CH/claude"
     -e CLAUDE_ENV_FILE="$WT/.claude/env.sh"
     -e VIRTUAL_ENV="$WT/.venv" -e CONDA_PREFIX="$CONDA_PREFIX"
     -e PYTHONSAFEPATH=1 -e CUPY_CACHE_DIR=/tmp/cupy_cache -e XDG_CACHE_HOME=/tmp/cache
@@ -177,7 +182,7 @@ fi
 # can't clobber the venv. Missing file -> forward nothing (safe). The matching
 # binary must also be on PATH in the container (via the RO /usr + conda mounts).
 ENVALLOW="$LISTS/env-allow.txt"
-ENV_RESERVED=" HOME PATH CONDA_PREFIX VIRTUAL_ENV CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE \
+ENV_RESERVED=" HOME USER PATH CONDA_PREFIX VIRTUAL_ENV CLAUDE_CONFIG_DIR CLAUDE_ENV_FILE \
 IS_SANDBOX PYTHONSAFEPATH CUPY_CACHE_DIR XDG_CACHE_HOME LD_LIBRARY_PATH \
 HTTPS_PROXY HTTP_PROXY https_proxy http_proxy NO_PROXY no_proxy "
 while IFS= read -r line; do
@@ -204,6 +209,18 @@ while IFS= read -r line; do
     [ -e "$p" ] && a+=( -v "$p:$p:$mode" )
   done < <(expand_path "$rest")
 done < <(clean_lines "$ALLOW")
+
+# (production storage) mount the production SSD cache dirs + the NFS data mount
+# read-write, so the full-node production FRB search (pirate:
+# configs/frb_server/cf05_production.yml) can run inside the sandbox. Missing
+# paths are skipped (non-production hosts). /mnt/cs00/data is mounted at that
+# exact directory (not a subdir) because the production config lists it in
+# check_mountpoints, and a bind target IS a mountpoint in-container. Coexists
+# with any overlapping fs-allow.txt entries (e.g. an rw subdir of
+# /mnt/cs00/data) -- podman nests the binds.
+for p in /scratch2 /scratch /mnt/cs00/data; do
+  [ -e "$p" ] && a+=( -v "$p:$p:rw" )
+done
 
 # The grouping dir is ALWAYS read-write: it holds this worktree, its siblings, the
 # toplevel, every repo's shared .git store (so commits work), and the agent's

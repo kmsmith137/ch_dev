@@ -338,6 +338,12 @@ manifest IS the security model:
   Appendix D.
 - **GPU (compute)** -- NVIDIA nodes via `--device` (`sandbox/devices.txt`) + host
   CUDA libs (RO) + default seccomp. No shim, no seccomp override (Appendix C).
+- **Production storage** -- the production SSD cache dirs and NFS data mount
+  (`/scratch2`, `/scratch`, `/mnt/cs00/data`) are always mounted rw (paths
+  absent on the host are skipped), so the full-node production FRB search can
+  run inside the sandbox. The `10.0.x` data NICs stay invisible under the
+  default private netns; production runs in-sandbox use a config whose data
+  addresses are rewritten to loopback.
 
 The `sandbox/` lists are plain text, read at every launch, so you edit them and
 just re-launch -- no re-render. `sbox-claude` is a tracked, machine-independent
@@ -530,6 +536,12 @@ networks), internet egress still works, and the host's loopback -- where
 keeps the proxy at the unchanged `http://127.0.0.1:PORT` (the gateway is derived
 at runtime; nothing machine-specific is baked in). `SBOX_NETNS=0` restores the
 old shared host netns (shared loopback + the host's real networks visible).
+Production-scale pirate runs work inside the default private netns by rewriting
+the config's data addresses to loopback: traffic between processes in the SAME
+netns is kernel-delivered (pasta only forwards traffic leaving the namespace),
+so there is no user-space bottleneck. The production storage (`/scratch2`,
+`/scratch`, `/mnt/cs00/data`) is always mounted read-write for this (missing
+paths are skipped).
 **`--group-add keep-groups`** still grants your supplementary-group reads
 (`chord-dev`, ...). Fine on a trusted single-user box; not a defense against a
 kernel-exploit-grade adversary.
