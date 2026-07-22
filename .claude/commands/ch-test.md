@@ -245,9 +245,34 @@ requires a judgment call or design decision, pause and ask the user.
 
 ## Final report
 
-Finish with a complete report: pass/fail for each of the six steps, the
-timings you observed (build time, per-step durations, server init time,
-files/sec while streaming, offline chunks/sec), the acqdir paths you
-created with their sizes (do NOT delete them), every fix you made with
-file references, and anything you skipped or that needs the user's
-judgment.
+Finish with a complete report containing ALL of the following:
+
+- Pass/fail for each of the six steps.
+- The timings you observed: build time, per-step durations, server init
+  time, files/sec while streaming, offline chunks/sec.
+- The acquisition inventory table (see below).
+- Every fix you made, with file references, so the user can review with
+  `git diff`.
+- Anything you skipped, worked around, or that needs the user's judgment.
+
+### Acquisition inventory
+
+The sweep writes tens of GB, so end the report with a table of everything
+it created on disk -- one row per directory: path, size (`du -sh`), and a
+short note on the contents (file count and chunk range for an acqdir).
+Sweep BOTH nfs_dirs, and include the incidental directories (rand_write_*,
+any cancelled or naturally-expired stream), not just the two main acqdirs:
+
+    du -sh ~/pirate_toy/*/ /mnt/cs00/data/$USER/*/
+
+Format:
+
+    | Path                                            | Size | Contents                    |
+    |-------------------------------------------------|------|-----------------------------|
+    | /mnt/cs00/data/{user}/prod_stream_{date}_{time}  | 28G  | 1014 files, chunks 29-1042  |
+    | ~/pirate_toy/toy_stream_{date}_{time}            | 337M | 3913 files, chunks 2435-6347|
+    | ~/pirate_toy/rand_write_{date}_{time}            | 180K | 2 files                     |
+
+Do NOT delete any of it -- the user decides what to keep. But DO mark the
+rows that are throwaway scratch (e.g. acqdirs from a debugging experiment
+rather than from steps 4 and 5) so the user can clean up selectively.
