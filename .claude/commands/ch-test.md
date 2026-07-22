@@ -21,7 +21,7 @@ Ground rules (these mirror CLAUDE.md; they apply throughout):
   location: the session scratch dir, /tmp, or pirate/plans/ (plans are
   never git-added).
 
-## Step 1: rebuild both repos (fast if up to date)
+## Step 1: rebuild both repos, then refresh the venv (fast if up to date)
 
 The user may have merged or rebased since the last build. Rebuild ksgpu
 FIRST (pirate links against it), then pirate:
@@ -34,6 +34,31 @@ fails on stale objects; if a build fails with errors that look like
 stale-state (missing generated files, undefined symbols that clearly exist),
 run `make clean` in that repo and rebuild before treating it as a real
 compile error.
+
+Then refresh the venv's editable installs, from the worktree root:
+
+    ./init-venv .
+
+`make` rebuilds the native libs but does NOT update what pip has installed,
+and a merge may have bumped a version or added a `[project.scripts]` entry
+point. A stale editable install is how `ksgpu test` ends up "command not
+found" while the source tree is perfectly fine. init-venv reinstalls
+pipmake/ksgpu/pirate in dependency order (pirate requires `ksgpu >= 1.3.0`,
+so ksgpu MUST be reinstalled first, or pip tries to fetch ksgpu from PyPI)
+and finishes with an import smoke test. It must exit 0. It is a fast no-op
+when everything is already current.
+
+Do NOT `pip uninstall` anything first. `pip install -e .` already replaces
+the old version, and it builds the new wheel BEFORE uninstalling the old
+one, so a failed rebuild leaves the venv intact; uninstalling first turns a
+build failure into an unusable venv that cannot be repaired without network
+access.
+
+init-venv needs no network as long as every declared dependency is already
+satisfied. If it does reach for PyPI, something genuinely new is needed
+(a newly added dependency, or a from-scratch `--recreate` venv, which must
+fetch `editables`): report the blocked domain per CLAUDE.md, do NOT work
+around it.
 
 ## Step 2: ksgpu unit tests (~3 min)
 
@@ -124,9 +149,19 @@ Cancel + shutdown cascade:
     - fake X-engine: RuntimeError (MonitorRingbuf stream closed, or its own
       sifter send failing -- either is a valid cascade edge)
     - rpc_status: subscribe_files error, then "RPC client(s) stopped"
-  Verify by PID that nothing lingers for more than ~10 seconds. (If you
-  check for leftovers with pgrep -f, beware matching your own watcher's
-  command line.)
+  Verify by PID that nothing lingers for more than ~10 seconds -- EXCEPT the
+  production server (step 5), which takes ~25 s: it prints its RuntimeError
+  within ~2 s like everything else, then spends the rest tearing down the
+  1.5 TiB hugepage pool and 80 GiB of GPU memory. Judge the cascade by when
+  the error is PRINTED, not when the process disappears; the toy server exits
+  in ~1 s. Afterwards confirm the resources actually came back (HugePages_Free
+  in /proc/meminfo, nvidia-smi at 0 MiB).
+  (If you check for leftovers with pgrep -f, beware matching your own
+  watcher's command line. Note also that a process which has exited but not
+  been reaped stays visible as a zombie -- PID 1 does not reap in this
+  sandbox -- and a zombie still answers kill(pid, 0), so a naive liveness
+  check reports long-dead processes as alive. Read the state field of
+  /proc/PID/stat and treat 'Z' as exited.)
 
 Offline dedisperser:
 
