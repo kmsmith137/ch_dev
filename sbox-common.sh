@@ -152,9 +152,10 @@ fi
 #                   per-group -- '/login' once per grouping dir.
 # PATH / CONDA_PREFIX are INHERITED from your shell (venv prepended for safety).
 # Caches go to the tmpfs /tmp (home dirs are read-only or absent under the allowlist).
+SBOX_USER="${USER:-$(id -un)}"         # in-container $USER; also picks the rw nfs subdir
 a=( run --rm "${NETOPT[@]}" --ipc host --ulimit memlock=-1:-1 --group-add keep-groups
     --tmpfs /tmp --tmpfs /run -w "$WT"
-    -e HOME="$HOME" -e USER="${USER:-$(id -un)}"
+    -e HOME="$HOME" -e USER="$SBOX_USER"
     -e IS_SANDBOX=1 -e CLAUDE_CONFIG_DIR="$CH/claude"
     -e CLAUDE_ENV_FILE="$WT/.claude/env.sh"
     -e VIRTUAL_ENV="$WT/.venv" -e CONDA_PREFIX="$CONDA_PREFIX"
@@ -217,17 +218,34 @@ while IFS= read -r line; do
   done < <(expand_path "$rest")
 done < <(clean_lines "$ALLOW")
 
-# (production storage) mount the production SSD cache dirs + the NFS data mount
-# read-write, so the full-node production FRB search (pirate:
+# (production storage) mount the production SSD cache dirs + the NFS data mount,
+# so the full-node production FRB search (pirate:
 # configs/frb_server/cf05_production.yml) can run inside the sandbox. Missing
 # paths are skipped (non-production hosts). /mnt/cs00/data is mounted at that
 # exact directory (not a subdir) because the production config lists it in
 # check_mountpoints, and a bind target IS a mountpoint in-container. Coexists
 # with any overlapping fs-allow.txt entries (e.g. an rw subdir of
 # /mnt/cs00/data) -- podman nests the binds.
-for p in /scratch2 /scratch /mnt/cs00/data; do
+for p in /scratch2 /scratch; do
   [ -e "$p" ] && a+=( -v "$p:$p:rw" )
 done
+
+# /mnt/cs00/data is the SHARED bulk export (mode 0777, everyone's subdirs), so
+# mount it :ro and nest just YOUR subdir :rw -- the agent can read the shared
+# tree but can only write where pirate's nfs_dir ('/mnt/cs00/data/{user}')
+# actually points. Both remain mountpoints in-container, so the config's
+# check_mountpoints still passes. Podman applies the deeper bind last, so the
+# nested :rw wins. The subdir is created first if absent: without it the bind
+# source would be missing, the mount would be skipped, and the search would
+# fail against the :ro parent.
+if [ -e /mnt/cs00/data ]; then
+  a+=( -v "/mnt/cs00/data:/mnt/cs00/data:ro" )
+  if [ -d "/mnt/cs00/data/$SBOX_USER" ] || mkdir -p "/mnt/cs00/data/$SBOX_USER" 2>/dev/null; then
+    a+=( -v "/mnt/cs00/data/$SBOX_USER:/mnt/cs00/data/$SBOX_USER:rw" )
+  else
+    warn "could not create /mnt/cs00/data/$SBOX_USER; production search will have no writable nfs_dir"
+  fi
+fi
 
 # The grouping dir is ALWAYS read-write: it holds this worktree, its siblings, the
 # toplevel, every repo's shared .git store (so commits work), and the agent's
