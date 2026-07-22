@@ -492,7 +492,22 @@ def build_venv(workdir, *, recreate: bool = False, test: bool = False,
     # --no-build-isolation installs below is no longer pip-installed from PyPI --
     # it is built from the workspace as the first BUILD entry, so it too lands in
     # the venv ahead of ksgpu/pirate, which then import it at build time.)
-    run([pip, "install", "--ignore-installed", "editables"], env=env)
+    #
+    # Install it only if the venv does not already have its own copy. This is the
+    # ONLY step in build_venv that needs the network, and inside the sandbox the
+    # egress proxy blocks PyPI -- so without this guard, re-running init-venv on
+    # an already-populated workspace dies here even though there is nothing to
+    # fetch. The probe runs under the venv's python and demands that the resolved
+    # module live under sys.prefix, so a conda-only copy -- precisely the case the
+    # paragraph above is about -- correctly counts as ABSENT and still triggers
+    # the install.
+    probe = ("import editables, pathlib, sys; "
+             "sys.exit(0 if pathlib.Path(sys.prefix).resolve() in "
+             "pathlib.Path(editables.__file__).resolve().parents else 1)")
+    if subprocess.run([py, "-c", probe], env=env, capture_output=True).returncode == 0:
+        info("editables already installed in the venv -- skipping (needs no network)")
+    else:
+        run([pip, "install", "--ignore-installed", "editables"], env=env)
 
     for name in BUILD:
         repo = workdir / name
