@@ -20,6 +20,13 @@ Ground rules (these mirror CLAUDE.md; they apply throughout):
 - Keep all scratch files (logs, pid files, config copies) in an untracked
   location: the session scratch dir, /tmp, or pirate/plans/ (plans are
   never git-added).
+- Waiting is not a plain `sleep`: the harness BLOCKS a foreground sleep, so
+  `sleep 180; check` is refused outright. To wait for something, background
+  an until-loop that exits when the condition is met -- `until <check>; do
+  sleep N; done` with run_in_background -- and let the completion
+  notification wake you. Most of this sweep is waiting (a ~25 min production
+  stream, two ~20 min test suites), so get this right early rather than
+  burning a tool call on the refusal.
 - At the very start, record the sweep's start time -- `touch
   $SCRATCH/sweep-start` -- so the final inventory can tell what this run
   created from what was already on disk.
@@ -172,9 +179,10 @@ Cancel + shutdown cascade:
   shutdown cascades: within a few seconds ALL five processes must exit.
   `pirate/misc/ch_test/check-cascade.sh LOGDIR sifter` does this: it finds
   every pid (including child processes, which matters for the production
-  groupers), sends the signal, reports each process's exit time and cascade
-  message, and checks the resources came back. Read its output against the
-  expectations below rather than just its exit status.
+  groupers), sends the signal, reports each process's exit time, the time its
+  cascade message was PRINTED, and the last few matching log lines, and checks
+  the resources came back. Read its output against the expectations below
+  rather than just its exit status.
   Expected per-process behavior (these error messages are the documented
   "errors cascade backwards" path, not failures):
     - sifter: "interrupted; shutting down", exit 0
@@ -188,8 +196,10 @@ Cancel + shutdown cascade:
   within ~2 s like everything else, then spends the rest tearing down the
   1.5 TiB hugepage pool and 80 GiB of GPU memory. Judge the cascade by when
   the error is PRINTED, not when the process disappears; the toy server exits
-  in ~1 s. Afterwards confirm the resources actually came back (HugePages_Free
-  in /proc/meminfo, nvidia-smi at 0 MiB).
+  in ~1 s. The script's "cascade message times" block gives the print times
+  directly -- read those, and expect every process (production server
+  included) to be within a few seconds. Afterwards confirm the resources
+  actually came back (HugePages_Free in /proc/meminfo, nvidia-smi at 0 MiB).
   (If you check for leftovers with pgrep -f, beware matching your own
   watcher's command line. Note also that a process which has exited but not
   been reaped stays visible as a zombie -- PID 1 does not reap in this
