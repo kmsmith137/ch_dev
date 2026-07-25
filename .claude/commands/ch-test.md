@@ -20,6 +20,25 @@ Ground rules (these mirror CLAUDE.md; they apply throughout):
 - Keep all scratch files (logs, pid files, config copies) in an untracked
   location: the session scratch dir, /tmp, or pirate/plans/ (plans are
   never git-added).
+- At the very start, record the sweep's start time -- `touch
+  $SCRATCH/sweep-start` -- so the final inventory can tell what this run
+  created from what was already on disk.
+
+## Helper scripts
+
+`pirate/misc/ch_test/` holds helpers for the mechanical parts of steps 4 and
+5: launching a pipeline, checking the shutdown cascade, scanning logs, the
+truth cross-check, the production preflight, the loopback config rewrite,
+and the inventory table. Read `pirate/misc/ch_test/README.md` first; each
+script also takes --help.
+
+Use them -- they encode two harness facts that otherwise cost a wasted
+pipeline run to rediscover (a backgrounded process does not survive across
+your tool calls, and bash async jobs inherit SIGINT=SIG_IGN into python, so
+`kill -INT` silently does nothing). But they are tools, not a substitute for
+looking: they print numbers, and the judgment about what those numbers mean
+stays yours. If a script's output disagrees with what you see in the logs,
+believe the logs and treat the script as the bug (see "Bugs" below).
 
 ## Step 1: rebuild both repos, then refresh the venv (fast if up to date)
 
@@ -95,30 +114,40 @@ Before starting:
 Launching the persistent processes (sifter, grouper, server, fake X-engine,
 rpc_status -- each runs until interrupted):
 
-- Launch each as a background process, stdout+stderr redirected to a
-  per-process log file, and record its PID (you will SIGINT one process
-  later and verify that each one exited).
+- Write a plan file and launch them with
+  `pirate/misc/ch_test/launch-pipeline.sh PLANFILE LOGDIR`, run in the
+  BACKGROUND (it blocks until the pipeline exits). It launches each process
+  with stdout+stderr to LOGDIR/name.log and its pid in LOGDIR/name.pid,
+  gates each launch on the previous process's readiness marker, watches
+  every log for errors while it waits, and writes LOGDIR/supervisor.log --
+  poll that for "ALL READY" or "STARTUP FAILED". Name the processes sifter,
+  grouper, server, xengine, rpc_status, which is what check-logs.py expects.
 - Launch order is downstream-first: sifter, grouper, server, fake X-engine,
-  then rpc_status. Before launching each command, wait until the downstream
-  command has settled into its wait-loop, then wait 1 more second. Do not
-  use blind sleeps; poll the downstream log for its readiness line.
-  Readiness markers as of this writing (re-derive from the source if they
-  have changed):
+  then rpc_status (i.e. list them in the plan file in that order).
+- The plan file supplies the readiness markers. As of this writing they are:
     - sifter:        "waiting for grouper(s) to connect"
     - grouper:       "waiting for FrbServer to connect"
-    - server:        "All N server(s) started"  (the RPC port is not bound
+    - server:        "server(s) started"  (the RPC port is not bound
                      until this line; toy init takes a few seconds)
     - fake X-engine: "FakeXEngine(s) running"
     - rpc_status:    "Running get_status"
-- While waiting on a readiness marker, also watch every log for
-  Traceback/RuntimeError/ERROR so a startup failure is detected instead of
-  hanging your poll loop.
+  Re-derive them from the source if they have changed -- they live in
+  run_toy_sifter.py, src_lib/FrbGrouper.cpp, run_server.py,
+  run_fake_xengine.py and run_rpc_status.py. A marker that never arrives
+  shows up as a supervisor timeout, so a stale marker is loud, not silent.
 
 Streaming:
 
 - Start a stream with rpc_start_stream, using the flags from
   quick_start.md. Save the printed acqdir name; the directory is created
   under the server's nfs_dir (printed at server startup).
+- Use `-D` (run indefinitely) rather than a `-d DURATION`. -d is in seconds
+  of DATA time, and the toy pipeline runs ~16x faster than real time, so
+  quick_start's '-d 1000' expires after only ~60 s of wallclock -- which is
+  about how long it takes to reach 2000 files and then do the random-write
+  step, so the stream tends to deactivate itself moments before you cancel
+  it, and the cancel path goes untested. With -D the stream ends only when
+  you cancel it.
 - Poll rpc_show_streams every few seconds until the stream has written 2000
   files (the "files: ... written = N" line). This takes ~30-40 seconds
   (the toy runs ~16x faster than real time). If the count stops growing,
@@ -141,6 +170,11 @@ Cancel + shutdown cascade:
   errored == 0.
 - Send SIGINT to the sifter (the END of the pipeline) and verify the
   shutdown cascades: within a few seconds ALL five processes must exit.
+  `pirate/misc/ch_test/check-cascade.sh LOGDIR sifter` does this: it finds
+  every pid (including child processes, which matters for the production
+  groupers), sends the signal, reports each process's exit time and cascade
+  message, and checks the resources came back. Read its output against the
+  expectations below rather than just its exit status.
   Expected per-process behavior (these error messages are the documented
   "errors cascade backwards" path, not failures):
     - sifter: "interrupted; shutting down", exit 0
@@ -170,7 +204,12 @@ Offline dedisperser:
   enumerate the beam(s), process every chunk, and exit 0.
 
 What "looks reasonable" means -- check ALL of these in the logs, not just
-exit codes:
+exit codes. `pirate/misc/ch_test/check-logs.py --logdir LOGDIR --cascade
+--acqdir NAME` mechanizes most of the list below and prints the numbers;
+`check-truth.py` does the offline-dedisperser cross-check (the last and
+fiddliest item). Both fail loudly rather than reporting a vacuous pass if a
+log format has changed. Read what they print -- a green exit status with
+implausible numbers is still a problem, and the numbers are the point:
 
 - server: per-chunk lines advance steadily, each well-formed and
   newline-terminated (including the FIRST per-chunk line).
@@ -189,13 +228,18 @@ exit codes:
 - rpc_rand_write: filenames in its output, in rpc_status, and on disk.
 - offline dedisperser: baseline snr_max roughly 5, and a spike (near the
   injected SNR) for EVERY truth FRB on the streamed beam inside the
-  acquired chunk range -- check this explicitly, don't eyeball it.
-  Cross-check recipe: grep the fake X-engine log for
-  "injected FRB: beam_id=B" lines; tci = fpga_timestamp / seqs_per_chunk,
-  where seqs_per_chunk = time_samples_per_chunk * seq_per_frb_time_sample
-  (both printed at fake X-engine startup). Expect a spike within a few
-  chunks of each truth tci. Adjacent-chunk echoes are expected (rudimentary
-  peak-finding), as are spikes BEFORE high-DM events (early-trigger trees).
+  acquired chunk range -- check this explicitly, don't eyeball it:
+
+      pirate/misc/ch_test/check-truth.py --xengine-log LOGDIR/xengine.log \
+          --dedisp-log DEDISP.log --beam 10 --freq-lo 400 --freq-hi 800
+
+  (--freq-lo/--freq-hi are the first and last entries of zone_freq_edges in
+  the dedispersion config used for the OFFLINE pass.) It converts each truth
+  event's fpga_timestamp to a chunk index, opens a window running from a few
+  chunks before it out to the end of the pulse's dispersion sweep, and
+  requires a spike inside that window. Adjacent-chunk echoes are expected
+  (rudimentary peak-finding), as are spikes BEFORE high-DM events
+  (early-trigger trees); both are inside the window it uses.
 - Scan every log for unexpected errors/warnings from before the SIGINT.
 
 ## Step 5: production quickstart search (~45-60 min)
@@ -205,34 +249,44 @@ Repeat the whole step-4 exercise using the "Running a production search
 
 - Run EVERYTHING on the same node, including the fake X-engine (ignore the
   "MUST BE ON CF00" note).
-- Environment check FIRST. Read the production frb_server config and
-  verify: the check_mountpoints directories are actually mountpoints
-  (os.path.ismount), the ssd_dirs exist and are writable, the nfs_dir
-  parent is writable and $USER is set (its {user} interpolation), free
-  hugepages >= num_servers * host_memory_per_server (grep HugePages
-  /proc/meminfo), and all GPUs are visible and idle (nvidia-smi). If
+- Environment check FIRST:
+
+      pirate/misc/ch_test/preflight-prod.py configs/frb_server/cf05_production.yml
+
+  It checks the check_mountpoints directories really are mountpoints, the
+  ssd_dirs exist and are writable, the nfs_dir resolves ({user} needs $USER)
+  and is writable, free hugepages >= num_servers * host_memory_per_server,
+  the GPUs are visible and idle, the rpc_ip_addrs globs resolve and are
+  exempt from the egress proxy, and loopback's MTU clears min_data_mtu. If
   anything is missing -- e.g. the sandbox was launched without the
   production storage mounts -- STOP and ask the user; the sandbox can only
   be changed from outside.
 - The production config assumes the node's physical 10.x.x.x data NICs,
   which are not visible inside the sandbox (private network namespace).
-  Copy the config to an UNTRACKED file (do not edit the tracked config)
-  and rewrite the network addresses to loopback: every data_ip_addrs entry
-  becomes 127.0.0.1 with a UNIQUE port (all receivers now share one IP --
-  e.g. 5000, 5001, 5002, 5003). Check that the rpc_ip_addrs globs resolve
-  in the sandbox (the sandbox mirrors the host's default interface, so
-  e.g. '10.222.3.*' usually resolves); if not, rewrite them to loopback
-  too and use those addresses in all rpc_* commands. Leave everything else
-  (memory sizes, dedispersion config, ssd/nfs dirs, check_mountpoints, MTU
-  minimums) unchanged -- loopback's MTU 65536 passes min_data_mtu. Pass
-  the rewritten filename to run_server in place of the tracked one.
+  Rewrite them to loopback, into an UNTRACKED file (never edit the tracked
+  config):
+
+      pirate/misc/ch_test/make-loopback-config.py \
+          configs/frb_server/cf05_production.yml $SCRATCH/cf05_loopback.yml
+
+  Every data_ip_addrs entry becomes 127.0.0.1 with a UNIQUE port (all
+  receivers now share one IP), and everything else -- memory sizes,
+  dedispersion config, ssd/nfs dirs, check_mountpoints, MTU minimums -- is
+  left byte-identical; loopback's MTU 65536 passes min_data_mtu. The script
+  prints the lines it changed, so confirm nothing else moved. Pass the
+  rewritten filename to run_server in place of the tracked one. If preflight
+  reported that the rpc_ip_addrs globs do NOT resolve, re-run it with
+  --rpc-loopback and use those addresses in all rpc_* commands.
 - The production server takes on the order of a minute to initialize
   (async allocation of very large memory pools). Do NOT start the fake
   X-engine before the "All N server(s) started" line.
 - There are multiple servers and groupers (one per GPU). Given multiple
   addresses, run_toy_grouper runs each grouper in a child subprocess; wait
-  for BOTH "waiting for FrbServer" lines before starting the server, and
-  remember the cascade must take down the children too.
+  for BOTH "waiting for FrbServer" lines before starting the server (set the
+  grouper line's count field to 2 in the plan file), and remember the
+  cascade must take down the children too (check-cascade.sh tracks child
+  pids, so they appear in its table as "grouper.child"). Give the server
+  line a generous timeout -- ~300 s, since production init takes a minute.
 - Poll until the stream has written 1000 files (not 2000). IMPORTANT:
   choose the stream duration so it cannot expire early. -d is in seconds
   of DATA time; a stream writes one file per time chunk per streamed beam,
@@ -248,13 +302,20 @@ Repeat the whole step-4 exercise using the "Running a production search
   config quick_start.md specifies for production acquisitions (NOTE: it
   differs from the config the server was started with). Expect a few
   minutes (~3 chunks/s at production scale).
-- Truth cross-check as in step 4, with two production-specific allowances:
-  a high-DM pulse sweeps MANY chunks (sweep_seconds =
-  4148.8 * DM * (f_lo_MHz^-2 - f_hi_MHz^-2); accept a spike anywhere from
-  a few chunks before the truth tci out to truth tci + sweep), and a truth
-  event within the first few chunks of the acquisition may legitimately
-  have NO spike (dedisperser warmup -- the documented "boundary effects
-  near the beginning of the acquisition").
+- Truth cross-check as in step 4, but with the production band and a warmup
+  allowance:
+
+      pirate/misc/ch_test/check-truth.py --xengine-log LOGDIR/xengine.log \
+          --dedisp-log DEDISP.log --beam 100 --freq-lo 300 --freq-hi 1500 \
+          --warmup 8
+
+  The two production-specific effects are already handled: a high-DM pulse
+  sweeps MANY chunks (the window extends to truth tci + sweep, computed from
+  the band edges), and a truth event within the first few chunks of the
+  acquisition may legitimately have NO spike (dedisperser warmup -- the
+  documented "boundary effects near the beginning of the acquisition").
+  Those are reported as "warm" and excluded from the pass/fail count, so
+  check how many there were rather than only the exit status.
 - Diagnostic note: if an rpc command to the host's own IP fails with
   "HTTP proxy returned response code 403", the sandbox launcher predates
   the NO_PROXY node-local exemption in sbox-common.sh; report it (the user
@@ -272,11 +333,38 @@ tests need the GPUs).
 ## Bugs
 
 If a step fails, it is possible the bug is in the test procedure, not the
-code being tested; you may also find errors in the documentation or the
-config files. Fix such bugs/errors as appropriate: fix, rebuild, and rerun
-the failed step to verify. Do NOT git-commit anything -- summarize every
-fix at the end so the user can review with `git diff`. If a failure
-requires a judgment call or design decision, pause and ask the user.
+code being tested; you may also find errors in the documentation, the
+config files, or the helper scripts in pirate/misc/ch_test/ (a script that
+parses a log format is exactly the kind of thing that goes stale when the
+format changes -- they are written to fail loudly rather than pass
+vacuously, so a sudden "format changed?" error usually means the script
+needs updating, not the code). Fix such bugs/errors as appropriate: fix,
+rebuild, and rerun the failed step to verify. Do NOT git-commit anything --
+summarize every fix at the end so the user can review with `git diff`. If a
+failure requires a judgment call or design decision, pause and ask the user.
+
+## Improving this procedure
+
+You have just run this end-to-end, so you are the only one who knows where
+it actually costs time. As you go, note anything that made the sweep rougher
+than it needed to be:
+
+- a fact you had to rediscover by experiment, rather than reading it here;
+- a check you did by hand that is mechanical enough to script;
+- an instruction that was ambiguous, stale, or left you guessing;
+- a helper script that was missing a flag, produced output you had to
+  post-process, or failed in a way that took a while to interpret;
+- a judgment call you had to make on the fly that could be decided once,
+  here, for every future run.
+
+At the end, suggest concrete changes: prose edits to this file, or changes
+to the scripts in pirate/misc/ch_test/. Roughly, mechanics and
+deterministic analysis belong in the scripts; judgment, context and
+warnings belong here (see pirate/misc/ch_test/README.md, including its "no
+vacuous passes" rule for anything you add to a script). Suggest rather than
+rewrite -- a test sweep should not turn into a refactor. An outright BUG in
+the procedure or a script is different: fix that, per "Bugs" above. Having
+nothing to suggest is a fine answer; don't invent friction.
 
 ## Final report
 
@@ -289,6 +377,8 @@ Finish with a complete report containing ALL of the following:
 - Every fix you made, with file references, so the user can review with
   `git diff`.
 - Anything you skipped, worked around, or that needs the user's judgment.
+- Suggested improvements to this file or to pirate/misc/ch_test/, per
+  "Improving this procedure" above (or a note that you had none).
 
 ### Acquisition inventory
 
@@ -298,7 +388,12 @@ short note on the contents (file count and chunk range for an acqdir).
 Sweep BOTH nfs_dirs, and include the incidental directories (rand_write_*,
 any cancelled or naturally-expired stream), not just the two main acqdirs:
 
-    du -sh ~/pirate_toy/*/ /mnt/cs00/data/$USER/*/
+    pirate/misc/ch_test/inventory.sh --since $SCRATCH/sweep-start \
+        ~/pirate_toy /mnt/cs00/data/$USER
+
+--since takes the file you touched at the start of the sweep, and classifies
+each row as "this sweep" or "pre-existing" -- both nfs_dirs usually hold
+acqdirs from earlier runs, and only the user can decide what to keep.
 
 Format:
 
