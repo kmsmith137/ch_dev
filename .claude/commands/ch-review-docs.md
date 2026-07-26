@@ -11,8 +11,9 @@ You have four jobs for the pirate_frb docs (in the `pirate/` sub-repo):
   2. Maintain the auto-cross-linking (the autolink Sphinx extension).
   3. Check that every multi-line python docstring opens with a one-line summary
      followed by a blank line, and fix the ones that don't.
-  4. Check that every class docstring explains how the class is created in
-     typical use (constructor, factory, or what returns an instance).
+  4. Check that each class in the python class reference explains how the class
+     is created in typical use (constructor, factory, or what returns an
+     instance).
 
 This is a LARGE task. Split it among parallel subagents and aggregate the
 results, the same way as the other review commands (ch-review-pybind11,
@@ -231,10 +232,17 @@ zero), plus `compileall` and an import of every touched module.
 
 ## Part 4 -- how is this class created?
 
-Every class docstring should explain how a caller gets an instance in TYPICAL
-real-world use. Go through the classes in the reference (the autoclass pages
-listed in `docs/source/python_class_reference.md`) and check each one. Depending
-on the class, one or more of these is appropriate:
+SCOPE: this part applies ONLY to classes that have an autoclass page, i.e. the
+ones listed in the toctree in `docs/source/python_class_reference.md`. Take that
+file as the definitive list. Every other class in the tree is out of scope here,
+however tempting -- the internal helpers (RunServerHelper, SparseTile,
+PfVariance, the `*Injections` modules, the test rigs) are each constructed at one
+call site and do not need this. Note this scope is NARROWER than Part 3, which
+applies to every python docstring in the package.
+
+For each class in that list, the docstring should explain how a caller gets an
+instance in TYPICAL real-world use. Depending on the class, one or more of these
+is appropriate:
 
   - constructor syntax;
   - factory function(s);
