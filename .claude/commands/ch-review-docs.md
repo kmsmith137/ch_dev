@@ -2,7 +2,7 @@
 description: Review the pirate Sphinx docs for correctness (esp. stale text) and maintain the auto-cross-linking
 ---
 
-You have three jobs for the pirate_frb docs (in the `pirate/` sub-repo):
+You have four jobs for the pirate_frb docs (in the `pirate/` sub-repo):
 
   1. Review the docs for CORRECTNESS -- especially "stale" text. Code is
      updated frequently and the docs are often not kept in sync, so mentions of
@@ -11,6 +11,8 @@ You have three jobs for the pirate_frb docs (in the `pirate/` sub-repo):
   2. Maintain the auto-cross-linking (the autolink Sphinx extension).
   3. Check that every multi-line python docstring opens with a one-line summary
      followed by a blank line, and fix the ones that don't.
+  4. Check that every class docstring explains how the class is created in
+     typical use (constructor, factory, or what returns an instance).
 
 This is a LARGE task. Split it among parallel subagents and aggregate the
 results, the same way as the other review commands (ch-review-pybind11,
@@ -227,6 +229,49 @@ in `help()`, editor tooltips, and LLM context -- not in the built docs. Expect t
 autolink count to be unchanged. Verify with the same ast scan (it should report
 zero), plus `compileall` and an import of every touched module.
 
+## Part 4 -- how is this class created?
+
+Every class docstring should explain how a caller gets an instance in TYPICAL
+real-world use. Go through the classes in the reference (the autoclass pages
+listed in `docs/source/python_class_reference.md`) and check each one. Depending
+on the class, one or more of these is appropriate:
+
+  - constructor syntax;
+  - factory function(s);
+  - example code;
+  - naming the function(s) ELSEWHERE that return instances, when that is the
+    real-world mechanism. The model here is FileSubscriber: "Constructed via
+    FrbSearchClient.subscribe_files()".
+
+Watch for the classes that are never constructed from python at all -- their
+instances only come out of some other call. They are easy to spot: their
+`__init__` is an inherited `wrapper_descriptor` (no `py::init(...)` in the
+binding), e.g. AssembledFrame, AssembledFrameSet, GpuDedisperserOutputs. These
+are exactly the ones most likely to say nothing about creation, since there is no
+constructor to describe.
+
+Also note that a pybind11 class does NOT get its constructor args rendered in the
+autoclass heading -- `inspect.signature` cannot read a pybind `__init__`, so the
+page shows a bare `class Foo`. (Classes whose injector module defines a python
+`__init__`, e.g. BumpAllocator / SlabAllocator / FrbGrouper, DO show args.) So for
+a pybind11 class, do not assume the reader can see the signature: if the
+constructor is the answer, spell it out in the docstring.
+
+WHEN TO EDIT vs ASK: if the fix is clear-cut -- the mechanism is unambiguous and
+you only need to state it -- just edit the docstring. If it involves a judgement
+call (which of several mechanisms is the "typical" one, whether a class deserves
+a worked example, how much detail is warranted), do NOT edit: describe the
+proposed change in the chat at the end of the review and let the user decide.
+
+Style for the "obtained from" pointers: just LIST the functions, with links. Do
+not describe what each one does -- that clutters the docstring, and the reader
+can click through. Write them fully qualified (`Class.method()`), which is the
+form the autolink extension turns into a link; a bare `method()` will not link.
+Verify each referenced member actually exists and is documented before writing
+it, so the reference is not dangling. Note that a reference to a member of the
+SAME class renders as plain text, not a link (self-links are suppressed by
+design) -- still write it qualified, for the reader.
+
 ## Final report
 
 Summarize: the stale-text / correctness issues you found and fixed (with the
@@ -234,4 +279,6 @@ code references that justify them), anything ambiguous left for the user to
 decide, how many links exist now, the cross-linking changes (aliases, denies,
 handwritten notes links), and any proposed new class stub pages to accept or
 reject. Confirm explicitly that all docstring summary-line (Part 3) violations
-have been fixed, and give the count. Remind the user nothing was committed.
+have been fixed, and give the count. List the Part 4 class-creation docstrings
+you edited, and separately the judgement-call ones you are proposing rather than
+having applied. Remind the user nothing was committed.
