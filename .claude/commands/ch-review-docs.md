@@ -111,9 +111,42 @@ Steps:
      `pirate_frb <word>` that names something nonexistent): almost always STALE
      TEXT -- fold this into the Part 1 fixes (correct the source so the mention
      is right, regardless of linking).
-   - `unknown-class` (a CamelCase name with no autoclass page): the wishlist. If
-     a name is heavily mentioned and deserves docs, PROPOSE a new autoclass stub
-     page: create `pirate/docs/source/classes/<Name>.md` containing
+   - `unknown-class` (a CamelCase name with no autoclass page): the wishlist.
+
+     ELIGIBILITY RULE -- only add an autoclass page for a class that is EITHER:
+       (a) mentioned in the sphinx docs (any `notes/*.md`, `docs/source/*.md`,
+           a rendered docstring, CLI help text, or a `configs/**/*.yml` /
+           `grpc/*.proto` comment), OR
+       (b) used in one of the `pirate_frb/run_*.py` scripts.
+     A class that meets neither test does NOT get a page, no matter how central
+     it looks in the C++ or how often it appears in internal code -- the class
+     reference documents the classes a reader of the docs can actually encounter,
+     not the whole binding surface. Conversely, a class meeting either test is a
+     candidate even if the autolink report never flagged it (the report only sees
+     CamelCase names that happen to appear in prose), so also sweep the run_*.py
+     scripts directly rather than working only from the report.
+
+     Then EXCLUDE a candidate that hits any of these, even if it passed (a)/(b):
+       1. NO CLASS DOCSTRING. `autoclass` on a class with no docstring (and whose
+          members have none either -- pybind11's auto-generated signature lines do
+          NOT count) renders as a bare list of signatures with no prose. Give the
+          class a docstring first, then add the page; don't ship an empty page.
+       2. TANGENTIAL MENTION ONLY. The name appears only as an illustrative
+          example of a convention rather than as a thing the text is about --
+          e.g. the lists of "classes that use option 1 / option 2" in
+          `notes/docstrings.md`, or a name cited in `notes/cpp.md` only to show
+          a locking or teardown idiom. Being cited as an example of how we write
+          code is not the same as the docs documenting that class.
+       3. CLI HELP-TEXT ONLY. The only mentions are bare names inside `cli/*`
+          help text listing what a flag runs (e.g. the kernel classes named in
+          `pirate_frb test` / `time` / `show_kernels` flag descriptions). Those
+          name a test target, not a documented interface.
+     Exclusions 2 and 3 are about the ONLY mentions. A class that is also
+     described substantively somewhere -- a notes section, a config/proto comment,
+     another class's docstring -- stays eligible.
+
+     For a class that passes the rule and deserves docs, PROPOSE a new autoclass
+     stub page: create `pirate/docs/source/classes/<Name>.md` containing
        # <Name>
        ```{eval-rst}
        .. autoclass:: <dotted.path>
@@ -122,7 +155,12 @@ Steps:
      and add `classes/<Name>` to the toctree in
      `pirate/docs/source/python_class_reference.md`. Confirm the dotted path is
      a real documented object (grep the package / pybind sources) before adding
-     it. Present these as proposals in your summary; create the stubs but call
+     it -- and check it resolves to the CLASS, not to a same-named module: a
+     package like `pirate_frb.rpc` that does not re-export the class will make
+     `pirate_frb.rpc.<Name>` resolve to the module, and the page then renders as
+     "alias of <module ...>" with an absolute filesystem path. Verify each new
+     page in `pirate/docs/build/html/classes/<Name>.html` after the rebuild.
+     Present these as proposals in your summary; create the stubs but call
      them out so the user can accept or drop them.
    - `denied`: expected (a curated suppression). Ignore unless a deny entry is
      now wrong.
