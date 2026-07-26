@@ -24,8 +24,9 @@ worse than a stale sentence, so verify before you edit.
 What "the docs" are (all in the `pirate/` sub-repo):
   - class/method docstrings, which render on the pages under
     `pirate/docs/source/classes/` (sources: `pirate_frb/*.py`, the pybind11
-    string literals in `src_pybind11/*.cpp`, and the injector docstrings in
-    `pirate_frb/pybind11_injections.py` and `pirate_frb/rpc/_*.py`);
+    string literals in `src_pybind11/*.cpp`, and the per-class injector
+    modules, which both apply the method injections and re-export the class --
+    `pirate_frb/core/*.py` and `pirate_frb/rpc/*.py`);
   - CLI help/description/epilog text in `pirate_frb/__main__.py` (rendered on
     the `cli/*` pages);
   - `notes/*.md` at the repo root (rendered as the `notes/*` pages);
