@@ -2,13 +2,15 @@
 description: Review the pirate Sphinx docs for correctness (esp. stale text) and maintain the auto-cross-linking
 ---
 
-You have two jobs for the pirate_frb docs (in the `pirate/` sub-repo):
+You have three jobs for the pirate_frb docs (in the `pirate/` sub-repo):
 
   1. Review the docs for CORRECTNESS -- especially "stale" text. Code is
      updated frequently and the docs are often not kept in sync, so mentions of
      renamed/removed classes, methods, arguments, defaults, file paths, CLI
      subcommands, and RPCs drift out of date. Find and fix these.
   2. Maintain the auto-cross-linking (the autolink Sphinx extension).
+  3. Check that every multi-line python docstring opens with a one-line summary
+     followed by a blank line, and fix the ones that don't.
 
 This is a LARGE task. Split it among parallel subagents and aggregate the
 results, the same way as the other review commands (ch-review-pybind11,
@@ -185,10 +187,51 @@ Steps:
    pages, handwritten notes links), rebuild (step 1) and re-check the report to
    confirm the change did what you intended and introduced no new noise.
 
+## Part 3 -- docstring summary lines
+
+Every multi-line python docstring must open with a ONE-LINE summary, followed by
+a blank line, then the body (PEP 257). Find every violation and fix it.
+
+SCOPE: this rule ONLY. We are deliberately not enforcing the rest of PEP 257 --
+do not "fix" closing-quote placement (the `"""` of a multi-line docstring sharing
+its last text line), indicative-vs-imperative mood, or missing module docstrings.
+Leave those alone unless the user asks.
+
+Detect with an `ast` scan rather than by eye -- `ast.get_docstring(node,
+clean=False)` over every Module / ClassDef / FunctionDef / AsyncFunctionDef in
+`pirate_frb/**/*.py`. A docstring is multi-line if it has non-blank content after
+its first non-blank line; it VIOLATES if the line immediately after that first
+non-blank line is itself non-blank. Two traps, both of which produce a bogus list
+if you get them wrong:
+
+  - EXCLUDE generated files: `pirate_frb/rpc/grpc/*_pb2_grpc.py` are generated
+    protobuf stubs, not ours to edit. Also skip `__pycache__`.
+  - A docstring whose text starts on the line AFTER the opening `"""` is NOT a
+    violation -- that is a permitted style variant. Find the first non-blank line
+    and judge from there, or you will report roughly twice the real count.
+
+Fixing: use your judgement per docstring, do not mechanically reflow.
+
+  - If the summary is a single sentence that merely WRAPPED onto line 2, pull the
+    remainder down below a blank line.
+  - If the docstring opens with a PARAGRAPH (or with something that is not a
+    summary at all -- a bare section heading like "Arguments", or prose like
+    "Consider a situation where..."), it usually makes more sense to WRITE A NEW
+    initial sentence saying what the thing is, and demote the original opening
+    into the body -- rather than promoting the paragraph's first sentence.
+  - Do not lose content: the body should keep everything the original said.
+
+Note these docstrings are mostly NOT rendered by Sphinx (autosummary is not
+enabled, and `autoclass :members:` renders the whole docstring), so the payoff is
+in `help()`, editor tooltips, and LLM context -- not in the built docs. Expect the
+autolink count to be unchanged. Verify with the same ast scan (it should report
+zero), plus `compileall` and an import of every touched module.
+
 ## Final report
 
 Summarize: the stale-text / correctness issues you found and fixed (with the
 code references that justify them), anything ambiguous left for the user to
 decide, how many links exist now, the cross-linking changes (aliases, denies,
 handwritten notes links), and any proposed new class stub pages to accept or
-reject. Remind the user nothing was committed.
+reject. Confirm explicitly that all docstring summary-line (Part 3) violations
+have been fixed, and give the count. Remind the user nothing was committed.
