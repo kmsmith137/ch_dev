@@ -37,6 +37,20 @@ GIT_PAGER
 TERM
 COLORTERM
 
+# --- session context: clipboard (OSC 52) ---
+# Claude picks its copy-to-clipboard mechanism from the session context: when it
+# sees an SSH session (any of these three set) it emits the OSC 52 escape
+# sequence, which the terminal (e.g. iTerm2) turns into a real clipboard write --
+# the only mechanism that works over ssh. Without them the sandboxed claude
+# assumes a LOCAL session and tries X11/Wayland helpers, which cannot work in the
+# container (no DISPLAY, no sockets) -- so "copy" silently breaks. Forward the
+# markers; they are read-only metadata (client/server IPs+ports, a pty path), not
+# secrets. (If you run sbox-claude inside tmux/screen, the multiplexer var TMUX/
+# STY may also matter for OSC 52 passthrough wrapping -- not forwarded for now.)
+SSH_TTY
+SSH_CONNECTION
+SSH_CLIENT
+
 # --- locale / time ---
 LANG
 LC_ALL
