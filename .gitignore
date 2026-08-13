@@ -14,6 +14,7 @@
 
 # Ephemeral.
 plans/
+research/
 scratch*.txt
 __pycache__/
 *.pyc
