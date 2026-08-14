@@ -13,8 +13,10 @@
 .agent/
 
 # Ephemeral.
+# No trailing slash on 'research': it is normally a symlink onto a scratch
+# filesystem, and a trailing-slash pattern matches only real directories.
 plans/
-research/
+research
 scratch*.txt
 __pycache__/
 *.pyc
