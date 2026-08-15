@@ -227,7 +227,9 @@ new campaign in the same tree. Then:
   human (`Q4`, ...), and suggestions (`S12`, ...) all continue across
   campaigns. New prompts cite old workdirs, and I refer to questions and
   suggestions by number in chat, sometimes long after the fact.
-- **Add a campaign divider** in JOURNAL.md before the new entries.
+- **Add a campaign divider** in JOURNAL.md before the new entries, and record the
+  new campaign's own start time and absolute stop time under it. A new campaign
+  gets a fresh horizon; it does not inherit the previous one.
 - **Freeze the previous campaign's research questions** under its own section.
   The live "Research questions" section describes the current campaign only.
   Re-adopt an old question explicitly if the new campaign still cares about it.
@@ -238,13 +240,20 @@ new campaign in the same tree. Then:
 
 ## When to stop
 
-If I gave you a stopping condition when invoking this skill, use it.
-Otherwise the default is: stop dispatching new subagents when either
+**I specify the horizon when I invoke the skill** -- e.g. "start campaign 3 with
+a 24-hour horizon". **There is no default. If I did not give one, ask me before
+dispatching anything**, together with your first-experiment proposal (see "Before
+you start"), so the two questions cost one round trip rather than two. Do not
+guess a horizon, and do not start the loop without one: the horizon is half the
+stopping rule, and a campaign that runs without it either stops arbitrarily or
+does not stop at all.
+
+Stop dispatching new subagents when either
 
 - the original question has been explored -- concretely, when the "Research
   questions" section of JOURNAL.md is empty, or when three consecutive
   experiments have returned nothing that changed the plan; or
-- ten hours have elapsed since you started,
+- the horizon has elapsed,
 
 whichever comes first.
 
@@ -254,10 +263,19 @@ is blocked on something only I can do, state it as blocked and move the action
 into HIGH_LEVEL.md as a suggestion with a `blocks:` line, or drop the question.
 Otherwise the section never empties and this criterion never fires.
 
-On your first iteration, record the start time in JOURNAL.md (`date +%s`,
-plus a human-readable form), and re-check the elapsed time each time through
-the loop. Your context may be compacted along the way, so the journal is the
-only place this survives.
+On your first iteration, record in JOURNAL.md the start time (`date +%s`, plus a
+human-readable form), the horizon I gave you, and -- most importantly -- the
+**absolute stop time** it implies, in UTC. Re-check it each time through the
+loop. Your context may be compacted along the way, so the journal is the only
+place this survives, and an absolute stop time survives compaction better than a
+duration, which would need re-deriving from a start time you may no longer have
+in context.
+
+**Put the stop time in every PROMPT.md too** ("campaign dispatch stops at 21:00
+UTC"), and tell subagents that if the deadline arrives mid-run they should stop,
+write up what they have, and say plainly which parts they did not reach. A
+subagent that knows the deadline cuts its own scope deliberately; one that does
+not runs out of time with nothing written.
 
 Stopping means stopping *dispatch*. Let any in-flight subagents finish and
 journal them, then append a closing section to JOURNAL.md: what was learned,
@@ -283,6 +301,15 @@ instruction survives.
 
 - A change of direction applies from your *next* dispatch onward. Do not kill
   in-flight subagents; let them finish and journal them normally.
+- **I may move the horizon**, in either direction: "give it another four hours",
+  "wrap up by 1800". Recompute the **absolute stop time**, record it in JOURNAL.md
+  as a dated note with the old and new values, and use the new one from then on.
+  Put the new stop time in subsequent PROMPT.md files as well. If in-flight
+  subagents were told the old deadline, that is usually fine -- but if the horizon
+  *shrank* past their deadline, tell them, so they cut scope and write up rather
+  than being cut off mid-experiment.
+- **A horizon moved into the past, or below the elapsed time, means "wrap up
+  now"** -- treat it as the shutdown case below rather than as an error.
 - "Shut down", "wrap up", or similar means: follow the procedure in "When to
   stop" above -- stop dispatching, let in-flight subagents finish, write the
   closing section, report, and stop. Never kill a running subagent to exit
@@ -397,5 +424,7 @@ this file.
 
 ## Before you start
 
-Propose your first experiment and wait for me to confirm it. After that, run
-the loop without asking for confirmation on each iteration.
+Propose your first experiment and wait for me to confirm it. **If I did not give
+you a horizon when I invoked the skill, ask for one in the same message** -- one
+round trip, not two. After that, run the loop without asking for confirmation on
+each iteration.
