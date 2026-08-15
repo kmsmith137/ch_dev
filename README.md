@@ -480,7 +480,18 @@ are needed. The launcher:
   *why* the base image must be the same Ubuntu release -- the host glibc/loader is
   overlaid and must match;
 - runs under the **default** seccomp profile, and adds `--ipc host` +
-  `--ulimit memlock=-1:-1` for CUDA pinned memory / RDMA.
+  `--ulimit memlock=-1:-1` for CUDA pinned memory / RDMA;
+- runs `--init` (catatonit as pid 1) so that orphaned children get **reaped**.
+  Without it pid 1 is `claude` itself, which never `wait()`s on processes it did
+  not spawn, so any fork pool outliving its parent leaks its workers as permanent
+  zombies. They cost no CPU or memory, but each holds a pid against the cgroup's
+  `pids.max` (2048) and the count only grows: one ~20 h agent session ended with
+  **611 of 642 pids** being zombies. Pid exhaustion then looks like something else
+  entirely -- in that session it killed a subagent, cost two more their last grid
+  cells, and produced a "2 hour hang" that was actually a worker pool that had
+  already died. If a workload genuinely needs more than 2048 *live* processes,
+  add `--pids-limit`; note that raising the ceiling only defers the wall, whereas
+  `--init` removes it.
 
 Verified live on this host: `nvcc` compiles and runs a kernel, and a `cupy`
 reduction returns the right answer -- no `cudaSetDevice ... 304`, no shim. The two

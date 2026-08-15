@@ -145,6 +145,21 @@ fi
 #                   the sbox-net proxy; push creds are simply not in the allowlist).
 # --ipc host + --ulimit memlock : CUDA pinned memory / RDMA.
 # --group-add keep-groups : preserve chord-dev/chord-users group reads.
+# --init          : run catatonit as pid 1, which REAPS ORPHANED CHILDREN. Without
+#                   it, pid 1 is claude itself, which never wait()s on processes it
+#                   did not spawn -- so every fork pool that outlives its parent
+#                   leaks its workers as permanent zombies. They cost no cpu and no
+#                   memory, but each holds a pid against the cgroup's pids.max
+#                   (2048), and the count only ever grows. Measured over one ~20 h
+#                   agent session: 611 of 642 pids were zombies, i.e. 95% of the
+#                   budget gone. That is not cosmetic -- pid exhaustion killed one
+#                   subagent outright, cost another two grid cells, and produced a
+#                   "2 hour hang" that was really a worker pool that had already
+#                   died and was misdiagnosed as a solver bug.
+#                   Note --pids-limit is the OTHER half of this and is deliberately
+#                   NOT set here: raising the ceiling defers the wall, reaping
+#                   removes it. Add --pids-limit only if a real workload needs more
+#                   than 2048 LIVE processes.
 # IS_SANDBOX=1    : lets claude accept --dangerously-skip-permissions as uid 0
 #                   (single-id userns: container uid 0 == host you). See App. D.
 # CLAUDE_CONFIG_DIR=$CH/claude : the agent's claude config/auth/transcripts live in
@@ -153,7 +168,7 @@ fi
 # PATH / CONDA_PREFIX are INHERITED from your shell (venv prepended for safety).
 # Caches go to the tmpfs /tmp (home dirs are read-only or absent under the allowlist).
 SBOX_USER="${USER:-$(id -un)}"         # in-container $USER; also picks the rw nfs subdir
-a=( run --rm "${NETOPT[@]}" --ipc host --ulimit memlock=-1:-1 --group-add keep-groups
+a=( run --rm --init "${NETOPT[@]}" --ipc host --ulimit memlock=-1:-1 --group-add keep-groups
     --tmpfs /tmp --tmpfs /run -w "$WT"
     -e HOME="$HOME" -e USER="$SBOX_USER"
     -e IS_SANDBOX=1 -e CLAUDE_CONFIG_DIR="$CH/claude"
