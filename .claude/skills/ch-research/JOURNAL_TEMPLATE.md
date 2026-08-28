@@ -182,7 +182,7 @@ Illustrative only -- the domain will differ.
     - **status**: superseded
     - **question**: is a truncated SVD ever admissible under D?
     - **setup**: rank-10 tree, 400 channels, no subbands, no Detrender2d,
-      seed 42; dense A from PfAvarExact, SVD via numpy. 8 cores, no GPU.
+      seed 42; dense A from 'varmap bf', SVD via numpy. 8 cores, no GPU.
     - **result**: spectrum falls off fast -- 64 singular values capture the
       matrix to D = 0.03; rank 32 gives D = 0.21. Dense A took 6 min.
     - **verdict**: confirms the no-detrender case is easy, and gives a baseline

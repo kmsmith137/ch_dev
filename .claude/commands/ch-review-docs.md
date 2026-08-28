@@ -237,8 +237,8 @@ SCOPE: this part applies ONLY to classes that have an autoclass page, i.e. the
 ones listed in the toctree in `docs/source/python_class_reference.md`. Take that
 file as the definitive list. Every other class in the tree is out of scope here,
 however tempting -- the internal helpers (RunServerHelper, SparseTile,
-PfVariance, the `*Injections` modules, the test rigs) are each constructed at one
-call site and do not need this. Note this scope is NARROWER than Part 3, which
+PfVarianceConvolver, the `*Injections` modules, the test rigs) are each constructed
+at one call site and do not need this. Note this scope is NARROWER than Part 3, which
 applies to every python docstring in the package.
 
 For each class in that list, the docstring should explain how a caller gets an
