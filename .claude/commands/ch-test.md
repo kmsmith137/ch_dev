@@ -209,7 +209,7 @@ Cancel + shutdown cascade:
 
 Offline dedisperser:
 
-- Run run_offline_dedisperser on the stream's acqdir, with the SAME
+- Run 'pirate_frb run offline_dedisperser' on the stream's acqdir, with the SAME
   dedispersion config the toy server used (see quick_start.md). It must
   enumerate the beam(s), process every chunk, and exit 0.
 
@@ -284,14 +284,14 @@ Repeat the whole step-4 exercise using the "Running a production search
   dedispersion config, ssd/nfs dirs, check_mountpoints, MTU minimums -- is
   left byte-identical; loopback's MTU 65536 passes min_data_mtu. The script
   prints the lines it changed, so confirm nothing else moved. Pass the
-  rewritten filename to run_server in place of the tracked one. If preflight
+  rewritten filename to 'run server' in place of the tracked one. If preflight
   reported that the rpc_ip_addrs globs do NOT resolve, re-run it with
   --rpc-loopback and use those addresses in all rpc_* commands.
 - The production server takes on the order of a minute to initialize
   (async allocation of very large memory pools). Do NOT start the fake
   X-engine before the "All N server(s) started" line.
 - There are multiple servers and groupers (one per GPU). Given multiple
-  addresses, run_toy_grouper runs each grouper in a child subprocess; wait
+  addresses, 'run toy_grouper' runs each grouper in a child subprocess; wait
   for BOTH "waiting for FrbServer" lines before starting the server (set the
   grouper line's count field to 2 in the plan file), and remember the
   cascade must take down the children too (check-cascade.sh tracks child

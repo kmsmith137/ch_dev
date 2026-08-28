@@ -145,7 +145,7 @@ Steps:
           code is not the same as the docs documenting that class.
        3. CLI HELP-TEXT ONLY. The only mentions are bare names inside `cli/*`
           help text listing what a flag runs (e.g. the kernel classes named in
-          `pirate_frb test` / `time` / `show_kernels` flag descriptions). Those
+          `pirate_frb test` / `time` / `show kernels` flag descriptions). Those
           name a test target, not a documented interface.
      Exclusions 2 and 3 are about the ONLY mentions. A class that is also
      described substantively somewhere -- a notes section, a config/proto comment,
