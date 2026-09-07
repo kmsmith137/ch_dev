@@ -1,10 +1,13 @@
 ---
-description: Full test sweep (rebuild, ksgpu + pirate unit tests, toy + production quickstart searches with offline dedispersion); ~90 min
+description: Full test sweep (rebuild, ksgpu + pirate unit tests, toy + production quickstart searches with offline dedispersion); ~2.5 hours
 ---
 
 Please run the full test sweep for the ch repos. Work from the worktree
 root (the directory containing ksgpu/, pirate/, pipmake/). Total expected
-runtime is roughly 90 minutes; most of it is steps 5 and 6. Run the steps IN
+runtime is roughly 2.5 hours; most of it is steps 5 and 6, and step 6 alone
+is over an hour. The per-step estimates below are wallclock times actually
+observed on cf05 -- treat them as a rough scale, not a budget: they move with
+the hardware and with how much the unit-test suite has grown. Run the steps IN
 ORDER -- each one gates the next. If a step fails, diagnose and fix it (see
 "Bugs" below), then rerun that step before moving on.
 
@@ -93,13 +96,13 @@ around it.
 (equivalently `python -m ksgpu test`). Every test must report pass and the
 command must exit 0.
 
-## Step 3: pirate quick unit tests (~3 min)
+## Step 3: pirate quick unit tests (~10 min)
 
     cd pirate && pirate_frb test -n 10
 
 Must exit 0 with all tests passing.
 
-## Step 4: toy quickstart search (~10 min)
+## Step 4: toy quickstart search (~5 min)
 
 Run the "toy search" end-to-end: fake X-engine -> FRB search server ->
 grouper -> sifter, plus RPC monitoring, streaming to disk, a random-write
@@ -252,7 +255,7 @@ implausible numbers is still a problem, and the numbers are the point:
   (early-trigger trees); both are inside the window it uses.
 - Scan every log for unexpected errors/warnings from before the SIGINT.
 
-## Step 5: production quickstart search (~45-60 min)
+## Step 5: production quickstart search (~30-45 min)
 
 Repeat the whole step-4 exercise using the "Running a production search
 (cf00/cf05)" section of quick_start.md, with these deviations:
@@ -267,9 +270,12 @@ Repeat the whole step-4 exercise using the "Running a production search
   ssd_dirs exist and are writable, the nfs_dir resolves ({user} needs $USER)
   and is writable, free hugepages >= num_servers * host_memory_per_server,
   the GPUs are visible and idle, the rpc_ip_addrs globs resolve and are
-  exempt from the egress proxy, and loopback's MTU clears min_data_mtu. If
-  anything is missing -- e.g. the sandbox was launched without the
-  production storage mounts -- STOP and ask the user; the sandbox can only
+  exempt from the egress proxy, and loopback's MTU clears min_data_mtu.
+  Run it when the GPUs are actually quiet: the idleness check reports any
+  resident memory, so running it while step 3 or 6 is still going produces
+  a 'warn gpu N: ... MiB used' that is just the unit tests, not a real
+  problem. If anything is missing -- e.g. the sandbox was launched without
+  the production storage mounts -- STOP and ask the user; the sandbox can only
   be changed from outside.
 - The production config assumes the node's physical 10.x.x.x data NICs,
   which are not visible inside the sandbox (private network namespace).
@@ -297,16 +303,23 @@ Repeat the whole step-4 exercise using the "Running a production search
   cascade must take down the children too (check-cascade.sh tracks child
   pids, so they appear in its table as "grouper.child"). Give the server
   line a generous timeout -- ~300 s, since production init takes a minute.
-- Poll until the stream has written 1000 files (not 2000). IMPORTANT:
-  choose the stream duration so it cannot expire early. -d is in seconds
-  of DATA time; a stream writes one file per time chunk per streamed beam,
-  and a chunk lasts time_samples_per_chunk * time_sample_ms (~2 s at
-  production scale) -- so quick_start's example '-d 1000' yields only ~490
-  files and then deactivates naturally. For 1000 files use e.g. '-d 2500'.
-  If a stream DOES expire naturally, that is not an error: verify its
-  status is "inactive" WITHOUT "(cancelled)", then start a longer one.
-- Expect ~25-30 minutes of streaming for the 1000 files: the production
-  pipeline runs at only ~1.3-1.5x real time.
+- Use `-D` here too, for the same reason as in step 4: the point is to
+  exercise the cancel path, and only -D guarantees the stream is still
+  active when you cancel it. The arithmetic for -d is given below only so
+  you can recognize a stream that expired on its own.
+- Poll until the stream has written 1000 files (not 2000). If you do use
+  -d, choose a duration that cannot expire early: -d is in seconds of DATA
+  time; a stream writes one file per time chunk per streamed beam, and a
+  chunk lasts time_samples_per_chunk * time_sample_ms (~2 s at production
+  scale) -- so quick_start's example '-d 1000' yields only ~490 files and
+  then deactivates naturally. For 1000 files use e.g. '-d 2500'. If a
+  stream DOES expire naturally, that is not an error: verify its status is
+  "inactive" WITHOUT "(cancelled)", then start a longer one.
+- Expect ~20-30 minutes of streaming for the 1000 files: the production
+  pipeline runs at only ~1.5x real time (~50 files/min). Sample the rate
+  over a couple of minutes before trusting an ETA -- the first ~30 s reads
+  far slower, because the stream only starts filling once the ring buffer
+  has caught up.
 - rpc_rand_write, cancel, cascade: as in step 4.
 - Offline dedisperser: run on the 1000-file acqdir with the dedispersion
   config quick_start.md specifies for production acquisitions (NOTE: it
@@ -331,7 +344,7 @@ Repeat the whole step-4 exercise using the "Running a production search
   the NO_PROXY node-local exemption in sbox-common.sh; report it (the user
   must relaunch the sandbox) rather than working around the proxy.
 
-## Step 6: pirate full unit tests (~30 min)
+## Step 6: pirate full unit tests (~90 min)
 
     cd pirate && pirate_frb test
 
