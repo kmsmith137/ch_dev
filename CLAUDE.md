@@ -69,16 +69,20 @@ to ksgpu):
 
 The old CHIME FRB search code (split across ~10 repos):
 
-  ../extern/bonsai            -> dedispersion transform
-  ../extern/ch_frb_io         -> file and networking IO code
-  ../extern/ch_frb_l1         -> top-level FRB search server for CHIME
+  ../extern/bonsai            -> dedispersion transform [dstn-sps]
+  ../extern/ch_frb_io         -> file and networking IO code [kms_chord]
+  ../extern/ch_frb_l1         -> top-level FRB search server for CHIME [kms_sps]
   ../extern/ch_frb_rfi        -> helper functions for constructing RFI transform chains
   ../extern/pyclops           -> python linkage (low-budget homegrown pybind11)
   ../extern/rf_kernels        -> x86 compute kernels (not gpu kernels)
-  ../extern/rf_pipelines      -> high-level framework for organizing RFI flagging, plotting, etc.
+  ../extern/rf_pipelines      -> high-level framework for organizing RFI flagging, plotting, etc. [dstn-master]
   ../extern/simd_helpers      -> x86 inline helpers
   ../extern/simpulse          -> python2 simulation code (vendored into 'pirate' with modifications)
-  ../extern/sp_hdf5           -> higher-level interface for libhdf5
+  ../extern/sp_hdf5           -> higher-level interface for libhdf5 [kms_1_10]
+  ../extern/spshuff           -> supports a compressed format [apr_slow_pulsar]
+
+These repos should be on main/master branches, except for cases where [branch_name]
+is noted in square brackets.
 
 If there is anything that you would like me to add to 'extern', please let me know
 (for example, source code for a third-party library, especially a case when the
