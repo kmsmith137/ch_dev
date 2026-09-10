@@ -6,6 +6,11 @@ This directory is a "container" git repo that holds three sub-repos
   ./ksgpu    GPU C++/CUDA core utils
   ./pirate   real-time FRB search engine
 
+The 'pirate' directory contains a new real-time FRB search, under development
+for the CHORD radio telescope, that will supersede a search code that we wrote
+a few years ago for CHIME. (The old CHIME search is scattered across ~10 git
+repos, mainly 'bonsai', 'rf_pipelines', and 'ch_frb_l1', see below.)
+
 Our setup is as follows (all pathnames are relative to a "grouping" dir,
 usually ~/ch):
 
@@ -46,14 +51,34 @@ retry. You cannot approve it yourself -- the allowlist is read-only to you.
 
 The grouping dir's extern/ holds source trees for some external software that may
 be useful as a reference. For most tasks you won't need them. From a worktree it
-is a sibling, i.e. ../extern:
+is a sibling, i.e. ../extern.
 
-  ../extern/chord-frb-sifter  -> real-time code "downstream" from the FRB search
-  ../extern/ch_frb_io         -> low-level networking for CHIME
+Libraries which are directly related to pirate:
+
+  ../extern/asdf-cxx          -> Erik Schnetter's asdf reader/writer (submoduled into 'pirate')
+  ../extern/chord-frb-sifter  -> real-time code "downstream" from pirate
+  ../extern/simpulse          -> python2 simulation code (vendored into 'pirate' with modifications)
+
+Libraries which are consumers of 'ksgpu', but not directly related to 'pirate'.
+(Rarely needed, but sometimes relevant if we're making backward-incompatible changes
+to ksgpu):
+
+  ../extern/direct_sht        -> real-time code "downstream" from the FRB search
+  ../extern/gpu_mm            -> real-time code "downstream" from the FRB search
+  ../extern/n2k               -> real-time code "downstream" from the FRB search
+
+The old CHIME FRB search code (split across ~10 repos):
+
+  ../extern/bonsai            -> dedispersion transform
+  ../extern/ch_frb_io         -> file and networking IO code
   ../extern/ch_frb_l1         -> top-level FRB search server for CHIME
-  ../extern/bonsai            -> old dedispersion code from CHIME (now superseded by 'pirate')
-  ../extern/simd_helpers      -> helper library used by bonsai
-  ../extern/rf_kernels        -> helper library used by bonsai
+  ../extern/ch_frb_rfi        -> helper functions for constructing RFI transform chains
+  ../extern/pyclops           -> python linkage (low-budget homegrown pybind11)
+  ../extern/rf_kernels        -> x86 compute kernels (not gpu kernels)
+  ../extern/rf_pipelines      -> high-level framework for organizing RFI flagging, plotting, etc.
+  ../extern/simd_helpers      -> x86 inline helpers
+  ../extern/simpulse          -> python2 simulation code (vendored into 'pirate' with modifications)
+  ../extern/sp_hdf5           -> higher-level interface for libhdf5
 
 If there is anything that you would like me to add to 'extern', please let me know
 (for example, source code for a third-party library, especially a case when the
